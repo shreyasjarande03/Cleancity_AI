@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Collector Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <header class="topbar">
+    <div>
+      <h2>Collector Dashboard</h2>
+      <p>Assigned waste collection tasks</p>
+    </div>
+    <a href="/" class="link-btn">Logout</a>
+  </header>
+
+  <div class="cards-row">
+    {% for item in complaints %}
+    <article class="card task-card">
+      <div class="task-header">
+        <span class="badge">{{ item.complaint_id }}</span>
+        <span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span>
+      </div>
+      <h4>{{ item.waste_type }} waste</h4>
+      <p>Coordinates: {{ item.latitude }}, {{ item.longitude }}</p>
+      <p>Severity: {{ item.severity }}</p>
+      <div class="task-actions">
+        <button>Accept task</button>
+        <button class="secondary">Upload after photo</button>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

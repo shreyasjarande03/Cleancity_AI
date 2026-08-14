@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <header class="topbar">
+    <div>
+      <h2>Admin Dashboard</h2>
+      <p>Municipal overview and complaint analytics</p>
+    </div>
+    <a href="/" class="link-btn">Logout</a>
+  </header>
+
+  <div class="stats-grid">
+    <div class="stat-box"><span>Total Complaints</span><strong>{{ total|default(0) }}</strong></div>
+    <div class="stat-box"><span>Pending</span><strong>{{ pending|default(0) }}</strong></div>
+    <div class="stat-box"><span>In Progress</span><strong>{{ in_progress|default(0) }}</strong></div>
+    <div class="stat-box"><span>Completed</span><strong>{{ cleaned|default(0) }}</strong></div>
+    <div class="stat-box"><span>High Priority</span><strong>{{ high_priority|default(0) }}</strong></div>
+  </div>
+
+  <section class="card map-box">
+    <h3>Complaint Map</h3>
+    <div class="map-placeholder">
+      {% for item in complaints %}
+        {% if item.latitude is not none and item.longitude is not none %}
+          {# Longitude mapped to Left (X), Latitude mapped to Top (Y) #}
+        <span 
+            class="map-point" 
+            style="left: {{ (((item.longitude|default(0)|float * 8) % 80) + 10)|round(2) }}%; top: {{ (((item.latitude|default(0)|float * 10) % 60) + 10)|round(2) }}%;"
+            title="ID: {{ item.complaint_id }}">
+          </span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card table-card">
+    <h3>Recent Complaints</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Location</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in complaints %}
+        <tr>
+          <td>{{ item.complaint_id }}</td>
+          <td>{{ item.latitude }}, {{ item.longitude }}</td>
+          <td>{{ item.waste_type }}</td>
+          <td>{{ item.status }}</td>
+          <td>{{ item.severity }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" style="text-align: center;">No complaints found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

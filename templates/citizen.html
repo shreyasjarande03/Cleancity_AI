@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Citizen Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  #photo-preview {
+    display: none;
+    margin: 8px 0 4px;
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 8px;
+    object-fit: cover;
+  }
+  .photo-cell img {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+</style>
+<div class="page-shell">
+  <header class="topbar">
+    <div>
+      <h2>Citizen Portal</h2>
+      <p>Report garbage and track complaint status</p>
+    </div>
+    <a href="/" class="link-btn">Logout</a>
+  </header>
+
+  <div class="layout-grid">
+    <section class="card">
+      <h3>Report Garbage</h3>
+      <form action="/report" method="post" class="report-form" enctype="multipart/form-data">
+        <input type="hidden" name="user_email" value="citizen@cleancity.ai" />
+
+        <label>Garbage category</label>
+        <select name="waste_type">
+          <option value="Plastic">Plastic</option>
+          <option value="Organic">Organic</option>
+          <option value="Mixed">Mixed</option>
+          <option value="Construction">Construction</option>
+          <option value="Dry">Dry</option>
+        </select>
+
+        <label>Image description</label>
+        <textarea name="description" rows="4" placeholder="Describe the garbage scene: e.g., plastic bottle near drainage, large pile of mixed waste on roadside"></textarea>
+
+        <label>Photo (optional)</label>
+        <input type="file" name="photo" id="photo" accept="image/*" onchange="previewCitizenPhoto(event)" />
+        <img id="photo-preview" alt="Selected photo preview" />
+
+        <label>Latitude</label>
+        <input type="number" step="0.000001" name="latitude" value="12.9716" required />
+
+        <label>Longitude</label>
+        <input type="number" step="0.000001" name="longitude" value="77.5946" required />
+
+        <button type="submit">Submit complaint</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h3>Recent complaints</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Photo</th>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in complaints %}
+          <tr>
+            <td class="photo-cell">
+              {% if item.image_url and item.image_url != "demo.png" %}
+              <img src="{{ item.image_url }}" alt="Photo for {{ item.complaint_id }}" />
+              {% else %}
+              &mdash;
+              {% endif %}
+            </td>
+            <td>{{ item.complaint_id }}</td>
+            <td>{{ item.waste_type }}</td>
+            <td><span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span></td>
+            <td>{{ item.severity }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+</div>
+
+<script>
+  function previewCitizenPhoto(event) {
+    const file = event.target.files[0];
+    const img = document.getElementById('photo-preview');
+    if (!file) {
+      img.style.display = 'none';
+      img.removeAttribute('src');
+      return;
+    }
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+  }
+</script>
+{% endblock %}
