@@ -2,66 +2,66 @@
 
 {% block title %}Citizen Dashboard{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+
 {% block content %}
-<style>
-  #photo-preview {
-    display: none;
-    margin: 8px 0 4px;
-    max-width: 100%;
-    max-height: 180px;
-    border-radius: 8px;
-    object-fit: cover;
-  }
-  .photo-cell img {
-    width: 40px;
-    height: 40px;
-    object-fit: cover;
-    border-radius: 6px;
-  }
-</style>
 <div class="page-shell">
   <header class="topbar">
     <div>
       <h2>Citizen Portal</h2>
-      <p>Report garbage and track complaint status</p>
+      <p>Report garbage with photo + GPS — AI detects and classifies waste automatically</p>
     </div>
-    <a href="/" class="link-btn">Logout</a>
+    <a href="/logout" class="link-btn">Logout</a>
   </header>
+
+  {% if request.query_params.get('msg') == 'reported' %}
+  <div class="alert alert-success">Complaint submitted! Nearest collector has been assigned.</div>
+  {% elif request.query_params.get('msg') == 'duplicate' %}
+  <div class="alert alert-info">This location was already reported. Your report was merged to avoid duplicates.</div>
+  {% elif request.query_params.get('msg') == 'no_garbage' %}
+  <div class="alert alert-warning">AI did not detect garbage in this report. Please try again with a clearer photo.</div>
+  {% elif request.query_params.get('msg') == 'incomplete' %}
+  <div class="alert alert-warning">Please add a photo, a category, or a description before submitting.</div>
+  {% endif %}
 
   <div class="layout-grid">
     <section class="card">
-      <h3>Report Garbage</h3>
+      <h3>📷 Report Garbage</h3>
       <form action="/report" method="post" class="report-form" enctype="multipart/form-data">
-        <input type="hidden" name="user_email" value="citizen@cleancity.ai" />
-
-        <label>Garbage category</label>
+        <label>Garbage category (optional)</label>
         <select name="waste_type">
-          <option value="Plastic">Plastic</option>
-          <option value="Organic">Organic</option>
-          <option value="Mixed">Mixed</option>
-          <option value="Construction">Construction</option>
-          <option value="Dry">Dry</option>
+          <option value="">Auto-detect with AI</option>
+          <option value="Plastic">🍾 Plastic</option>
+          <option value="Organic">🌿 Organic</option>
+          <option value="Mixed">🗑️ Mixed</option>
+          <option value="Construction">🚧 Construction</option>
+          <option value="Dry">📦 Dry</option>
         </select>
 
-        <label>Image description</label>
-        <textarea name="description" rows="4" placeholder="Describe the garbage scene: e.g., plastic bottle near drainage, large pile of mixed waste on roadside"></textarea>
+        <label>Description</label>
+        <textarea name="description" rows="3" placeholder="e.g. large pile of plastic bottles near drainage"></textarea>
 
-        <label>Photo (optional)</label>
-        <input type="file" name="photo" id="photo" accept="image/*" onchange="previewCitizenPhoto(event)" />
-        <img id="photo-preview" alt="Selected photo preview" />
+        <label>Photo</label>
+        <input type="file" name="photo" id="photo" accept="image/*" capture="environment" onchange="previewPhoto(event)" />
+        <img id="photo-preview" class="photo-preview" alt="Preview" />
 
-        <label>Latitude</label>
-        <input type="number" step="0.000001" name="latitude" value="12.9716" required />
+        <label>Location (auto-detected GPS)</label>
+        <div class="gps-row">
+          <input type="number" step="0.000001" name="latitude" id="latitude" value="12.9716" required />
+          <input type="number" step="0.000001" name="longitude" id="longitude" value="77.5946" required />
+          <button type="button" class="secondary" onclick="captureGPS()">📍 Refresh GPS</button>
+        </div>
+        <div id="citizen-map" class="mini-map"></div>
 
-        <label>Longitude</label>
-        <input type="number" step="0.000001" name="longitude" value="77.5946" required />
-
-        <button type="submit">Submit complaint</button>
+        <button type="submit">Submit Complaint</button>
       </form>
     </section>
 
     <section class="card">
-      <h3>Recent complaints</h3>
+      <h3>My Complaints</h3>
       <table>
         <thead>
           <tr>
@@ -70,23 +70,25 @@
             <th>Type</th>
             <th>Status</th>
             <th>Severity</th>
+            <th>Reports</th>
           </tr>
         </thead>
         <tbody>
           {% for item in complaints %}
           <tr>
             <td class="photo-cell">
-              {% if item.image_url and item.image_url != "demo.png" %}
-              <img src="{{ item.image_url }}" alt="Photo for {{ item.complaint_id }}" />
-              {% else %}
-              &mdash;
-              {% endif %}
+              {% if item.image_url %}
+              <img src="{{ item.image_url }}" alt="Report photo" />
+              {% else %}—{% endif %}
             </td>
             <td>{{ item.complaint_id }}</td>
             <td>{{ item.waste_type }}</td>
             <td><span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span></td>
             <td>{{ item.severity }}</td>
+            <td>{{ item.report_count or 1 }}</td>
           </tr>
+          {% else %}
+          <tr><td colspan="6" class="empty">No complaints yet. Report garbage above!</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -95,16 +97,48 @@
 </div>
 
 <script>
-  function previewCitizenPhoto(event) {
+  let citizenMap, citizenMarker;
+
+  function initCitizenMap() {
+    const lat = parseFloat(document.getElementById('latitude').value);
+    const lng = parseFloat(document.getElementById('longitude').value);
+    citizenMap = L.map('citizen-map').setView([lat, lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(citizenMap);
+    citizenMarker = L.marker([lat, lng], { draggable: true }).addTo(citizenMap);
+    citizenMarker.on('dragend', () => {
+      const pos = citizenMarker.getLatLng();
+      document.getElementById('latitude').value = pos.lat.toFixed(6);
+      document.getElementById('longitude').value = pos.lng.toFixed(6);
+    });
+  }
+
+  function captureGPS() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      document.getElementById('latitude').value = lat.toFixed(6);
+      document.getElementById('longitude').value = lng.toFixed(6);
+      if (citizenMap && citizenMarker) {
+        citizenMarker.setLatLng([lat, lng]);
+        citizenMap.setView([lat, lng], 16);
+      }
+    });
+  }
+
+  function previewPhoto(event) {
     const file = event.target.files[0];
     const img = document.getElementById('photo-preview');
-    if (!file) {
-      img.style.display = 'none';
-      img.removeAttribute('src');
-      return;
-    }
+    if (!file) { img.style.display = 'none'; return; }
     img.src = URL.createObjectURL(file);
     img.style.display = 'block';
   }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initCitizenMap();
+    captureGPS();
+  });
 </script>
 {% endblock %}

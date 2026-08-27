@@ -1,69 +1,151 @@
 {% extends "base.html" %}
 
-{% block title %}Admin Dashboard{% endblock %}
+{% block title %}Admin Dashboard — CleanCity AI{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
 
 {% block content %}
 <div class="page-shell">
   <header class="topbar">
     <div>
       <h2>Admin Dashboard</h2>
-      <p>Municipal overview and complaint analytics</p>
+      <p>Municipal overview, complaint analytics, and garbage hotspot clustering</p>
     </div>
-    <a href="/" class="link-btn">Logout</a>
+    <a href="/logout" class="link-btn">Logout</a>
   </header>
 
   <div class="stats-grid">
-    <div class="stat-box"><span>Total Complaints</span><strong>{{ total|default(0) }}</strong></div>
+    <div class="stat-box"><span>Total</span><strong>{{ total|default(0) }}</strong></div>
     <div class="stat-box"><span>Pending</span><strong>{{ pending|default(0) }}</strong></div>
+    <div class="stat-box"><span>Assigned</span><strong>{{ assigned|default(0) }}</strong></div>
     <div class="stat-box"><span>In Progress</span><strong>{{ in_progress|default(0) }}</strong></div>
-    <div class="stat-box"><span>Completed</span><strong>{{ cleaned|default(0) }}</strong></div>
+    <div class="stat-box"><span>Cleaned</span><strong>{{ cleaned|default(0) }}</strong></div>
     <div class="stat-box"><span>High Priority</span><strong>{{ high_priority|default(0) }}</strong></div>
   </div>
 
-  <section class="card map-box">
-    <h3>Complaint Map</h3>
-    <div class="map-placeholder">
-      {% for item in complaints %}
-        {% if item.latitude is not none and item.longitude is not none %}
-          {# Longitude mapped to Left (X), Latitude mapped to Top (Y) #}
-        <span 
-            class="map-point" 
-            style="left: {{ (((item.longitude|default(0)|float * 8) % 80) + 10)|round(2) }}%; top: {{ (((item.latitude|default(0)|float * 10) % 60) + 10)|round(2) }}%;"
-            title="ID: {{ item.complaint_id }}">
-          </span>
-        {% endif %}
-      {% endfor %}
-    </div>
-  </section>
+  <h3>Complaint & hotspot map</h3>
+  <div id="admin-map" class="map-full"></div>
 
-  <section class="card table-card">
-    <h3>Recent Complaints</h3>
+  <div class="layout-grid">
+    <section class="card">
+      <h3>Garbage hotspot clusters</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th>Count</th>
+            <th>Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for spot in hotspots %}
+          <tr>
+            <td>{{ "%.4f"|format(spot.latitude) }}, {{ "%.4f"|format(spot.longitude) }}</td>
+            <td><strong>{{ spot.complaint_count }}</strong></td>
+            <td>{{ spot.label }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">No hotspot clusters yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h3>Predicted hotspots (next week)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th>Projected</th>
+            <th>Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pred in predictions %}
+          <tr>
+            <td>{{ "%.4f"|format(pred.latitude) }}, {{ "%.4f"|format(pred.longitude) }}</td>
+            <td><strong>{{ pred.predicted_complaints_next_week }}</strong></td>
+            <td>{{ pred.risk_level }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">Need complaint history to predict hotspots.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <section class="card">
+    <h3>All complaints</h3>
     <table>
       <thead>
         <tr>
           <th>ID</th>
-          <th>Location</th>
+          <th>Coordinates</th>
           <th>Type</th>
           <th>Status</th>
-          <th>Priority</th>
+          <th>Severity</th>
+          <th>Reports</th>
         </tr>
       </thead>
       <tbody>
         {% for item in complaints %}
         <tr>
           <td>{{ item.complaint_id }}</td>
-          <td>{{ item.latitude }}, {{ item.longitude }}</td>
+          <td>{{ "%.4f"|format(item.latitude) }}, {{ "%.4f"|format(item.longitude) }}</td>
           <td>{{ item.waste_type }}</td>
-          <td>{{ item.status }}</td>
+          <td><span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span></td>
           <td>{{ item.severity }}</td>
+          <td>{{ item.report_count or 1 }}</td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="5" style="text-align: center;">No complaints found.</td>
-        </tr>
+        <tr><td colspan="6" class="empty">No complaints yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </section>
 </div>
+
+<script>
+  const complaints = {{ complaints_json | safe }};
+  const hotspots = {{ hotspots_json | safe }};
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const center = complaints.length
+      ? [complaints[0].latitude, complaints[0].longitude]
+      : [12.9716, 77.5946];
+
+    const map = L.map('admin-map').setView(center, 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    complaints.forEach(c => {
+      const color = (c.severity === 'Critical' || c.severity === 'High') ? '#d65b52' : '#f4b942';
+      L.circleMarker([c.latitude, c.longitude], {
+        radius: 7,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.7,
+        weight: 2
+      })
+      .addTo(map)
+      .bindPopup(`<b>${c.complaint_id}</b><br>${c.waste_type} — ${c.status}`);
+    });
+
+    hotspots.forEach(h => {
+      L.circle([h.latitude, h.longitude], {
+        radius: 200 + (h.complaint_count * 80),
+        color: '#d65b52',
+        fillColor: '#d65b52',
+        fillOpacity: 0.12,
+        weight: 1.5
+      }).addTo(map).bindPopup(`Hotspot<br>Incidents: ${h.complaint_count}`);
+    });
+  });
+</script>
 {% endblock %}
