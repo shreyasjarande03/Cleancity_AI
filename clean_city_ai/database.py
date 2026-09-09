@@ -95,6 +95,7 @@ def init_db() -> None:
 
     _migrate_columns(conn)
     _seed_data(conn)
+    _reassign_orphaned_complaints(conn)
     conn.commit()
     conn.close()
 
@@ -199,7 +200,8 @@ def get_complaints_for_collector(collector_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT * FROM complaints
-        WHERE collector_id = ? AND status NOT IN ('Verified')
+        WHERE status NOT IN ('Verified')
+          AND (collector_id = ? OR collector_id IS NULL)
         ORDER BY priority_score DESC, created_at ASC
         """,
         (collector_id,),
@@ -296,18 +298,57 @@ def update_complaint_status(complaint_id: str, status: str, **extra: Any) -> dic
     return dict(row) if row else None
 
 
+def _nearest_collector(rows, latitude: float, longitude: float):
+    return min(rows, key=lambda row: haversine_km(latitude, longitude, row["latitude"], row["longitude"]))
+
+
 def assign_collector(latitude: float, longitude: float) -> dict[str, Any] | None:
     conn = get_connection()
-    rows = conn.execute(
+    linked = conn.execute(
+        """
+        SELECT id, name, latitude, longitude FROM collectors
+        WHERE availability = 'Available' AND user_id IS NOT NULL
+        """
+    ).fetchall()
+    rows = linked or conn.execute(
         "SELECT id, name, latitude, longitude FROM collectors WHERE availability = 'Available'"
     ).fetchall()
     conn.close()
 
     if not rows:
         return None
+    return dict(_nearest_collector(rows, latitude, longitude))
 
-    nearest = min(rows, key=lambda row: haversine_km(latitude, longitude, row["latitude"], row["longitude"]))
-    return dict(nearest)
+
+def _reassign_orphaned_complaints(conn: sqlite3.Connection) -> None:
+    """Give open tasks to collectors who can log in so the dashboard is not empty."""
+    linked = conn.execute(
+        "SELECT id, latitude, longitude FROM collectors WHERE user_id IS NOT NULL"
+    ).fetchall()
+    if not linked:
+        return
+
+    orphaned = conn.execute(
+        """
+        SELECT c.complaint_id, c.latitude, c.longitude
+        FROM complaints c
+        LEFT JOIN collectors col ON col.id = c.collector_id
+        WHERE c.status IN ('Pending', 'Assigned', 'In Progress')
+          AND (c.collector_id IS NULL OR col.user_id IS NULL)
+        """
+    ).fetchall()
+
+    for row in orphaned:
+        nearest = _nearest_collector(linked, row["latitude"], row["longitude"])
+        conn.execute(
+            """
+            UPDATE complaints
+            SET collector_id = ?,
+                status = CASE WHEN status = 'Pending' THEN 'Assigned' ELSE status END
+            WHERE complaint_id = ?
+            """,
+            (nearest["id"], row["complaint_id"]),
+        )
 
 
 def save_resolution(payload: dict[str, Any]) -> dict[str, Any]:

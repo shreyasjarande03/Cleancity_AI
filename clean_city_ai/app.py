@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import warnings
+
+# Suppress the redundant module caching warning inside runpy
+warnings.filterwarnings(
+    "ignore",
+    message=".*found in sys.modules after import of package.*",
+    category=RuntimeWarning,
+)
+
 import json
+import logging
 import shutil
 import uuid
 from datetime import datetime
@@ -36,6 +46,8 @@ from .database import (
     update_complaint_status,
 )
 
+logger = logging.getLogger("CleanCity.App")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "static" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,6 +69,7 @@ def _save_upload(file: UploadFile | None) -> str | None:
     dest = UPLOAD_DIR / filename
     with dest.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    logger.info("Saved upload image to destination: %s", dest)
     return f"/static/uploads/{filename}"
 
 
@@ -111,7 +124,7 @@ async def citizen_dashboard(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="citizen.html",
-        context={"complaints": complaints, "user": user},
+        context={"complaints": complaints, "user": user, "ai_result": None},
     )
 
 
@@ -173,17 +186,42 @@ async def report(
     if not user:
         return RedirectResponse(url="/", status_code=303)
 
+    complaints = get_complaints_for_citizen(user["id"])
+
     if not (waste_type or "").strip() and not (description or "").strip() and (not photo or not photo.filename):
-        return RedirectResponse(url="/citizen?msg=incomplete", status_code=303)
+        return templates.TemplateResponse(
+            request=request,
+            name="citizen.html",
+            context={
+                "complaints": complaints,
+                "user": user,
+                "msg": "incomplete",
+                "ai_result": None,
+            },
+        )
 
     image_url = _save_upload(photo)
     local_path = BASE_DIR / image_url.lstrip("/") if image_url else None
 
+    logger.info("Processing citizen report submission: local_path=%s, desc='%s', type='%s'", local_path, description, waste_type)
     analysis = detect_waste_from_image(local_path, description, waste_type)
+    logger.info("AI Analysis completed in report route: %s", analysis)
+
     if not analysis.get("is_garbage", True):
-        return RedirectResponse(url="/citizen?msg=no_garbage", status_code=303)
+        return templates.TemplateResponse(
+            request=request,
+            name="citizen.html",
+            context={
+                "complaints": complaints,
+                "user": user,
+                "msg": "no_garbage",
+                "ai_result": analysis,
+                "last_uploaded_image": image_url,
+            },
+        )
 
     severity = analysis.get("severity") or estimate_severity(description or waste_type or "garbage")
+    final_desc = description.strip() if description and description.strip() else (analysis.get("suggested_description") or f"{analysis['waste_type']} waste")
     duplicate = find_duplicate_complaint(latitude, longitude)
 
     if duplicate:
@@ -193,7 +231,18 @@ async def report(
             updated.get("report_count", 1),
         )
         update_complaint_status(duplicate["complaint_id"], updated["status"], priority_score=priority)
-        return RedirectResponse(url="/citizen?msg=duplicate", status_code=303)
+        updated_complaints = get_complaints_for_citizen(user["id"])
+        return templates.TemplateResponse(
+            request=request,
+            name="citizen.html",
+            context={
+                "complaints": updated_complaints,
+                "user": user,
+                "msg": "duplicate",
+                "ai_result": analysis,
+                "last_uploaded_image": image_url,
+            },
+        )
 
     assigned = assign_collector(latitude, longitude)
     status = "Assigned" if assigned else "Pending"
@@ -212,11 +261,40 @@ async def report(
         "created_at": datetime.utcnow().isoformat(),
         "collector_id": assigned["id"] if assigned else None,
         "ai_confidence": analysis.get("confidence"),
-        "description": description,
+        "description": final_desc,
         "priority_score": priority,
     }
     save_complaint(payload)
-    return RedirectResponse(url="/citizen?msg=reported", status_code=303)
+    updated_complaints = get_complaints_for_citizen(user["id"])
+    return templates.TemplateResponse(
+        request=request,
+        name="citizen.html",
+        context={
+            "complaints": updated_complaints,
+            "user": user,
+            "msg": "reported",
+            "ai_result": analysis,
+            "last_uploaded_image": image_url,
+        },
+    )
+
+
+@app.post("/api/analyze-preview")
+async def analyze_preview(
+    request: Request,
+    waste_type: str = Form(""),
+    description: str = Form(""),
+    photo: UploadFile | None = File(None),
+):
+    user = _session_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
+    image_url = _save_upload(photo)
+    local_path = BASE_DIR / image_url.lstrip("/") if image_url else None
+    analysis = detect_waste_from_image(local_path, description, waste_type)
+    analysis["image_url"] = image_url
+    return analysis
 
 
 @app.post("/collector/{complaint_id}/accept")
@@ -224,7 +302,9 @@ async def accept_task(request: Request, complaint_id: str):
     user = _require_role(request, "collector")
     if not user:
         return RedirectResponse(url="/", status_code=303)
-    update_complaint_status(complaint_id, "Assigned")
+    collector = get_collector_by_user_email(user["email"])
+    extra = {"collector_id": collector["id"]} if collector else {}
+    update_complaint_status(complaint_id, "Assigned", **extra)
     return RedirectResponse(url="/collector?msg=accepted", status_code=303)
 
 

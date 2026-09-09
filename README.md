@@ -16,10 +16,12 @@ CleanCity AI is an AI-powered smart waste management platform that enables citiz
 - Duplicate reports at the same location are merged automatically
 
 ### AI Pipeline
-- **YOLOv8** object detection (with pixel/keyword fallback if model unavailable)
-- Waste classification: Plastic, Organic, Mixed, Construction, Dry
-- Severity scoring: Low → Medium → High → Critical
-- Priority score based on severity + duplicate report count
+- **Custom YOLOv8 Model (`models/best.pt`)** fine-tuned on the TACO (Trash Annotations in Context) dataset
+- **10 Waste Classes**: `plastic_bottle`, `plastic_wrapper`, `plastic_container`, `plastic_bag`, `plastic_cap_lid`, `metal_can`, `metal_scrap`, `glass`, `paper_cardboard`, `cigarette`
+- Waste category mapping: Plastic, Dry, Mixed (with pixel/keyword fallback for Organic and Construction)
+- Multi-detection handling with confidence-weighted dominant waste calculation
+- Severity scoring: Low → Medium → High → Critical (factoring bounding box area, object count, clutter, and keywords)
+- Priority score based on severity + duplicate report count + age
 - Before/after image verification for cleanup confirmation
 
 ### Collector Dashboard
@@ -47,8 +49,10 @@ CleanCity AI is an AI-powered smart waste management platform that enables citiz
 CleanCity_AI/
 ├── clean_city_ai/
 │   ├── app.py          # FastAPI routes and web UI
-│   ├── ai.py           # YOLO detection, severity, verification, hotspots
+│   ├── ai.py           # Custom TACO YOLO detection, severity, verification, hotspots
 │   └── database.py     # SQLite data layer
+├── models/
+│   └── best.pt         # Custom fine-tuned TACO YOLOv8 model
 ├── templates/          # Citizen, Collector, Admin dashboards
 ├── static/
 │   ├── styles.css
@@ -69,8 +73,6 @@ python -m clean_city_ai.app
 
 Open **http://localhost:8000** in your browser.
 
-> On first run, YOLOv8 will download `yolov8n.pt` (~6 MB). If Ultralytics is unavailable, the system falls back to pixel analysis + keyword classification.
-
 ## Demo Accounts
 
 | Role      | Email                    | Password      |
@@ -86,7 +88,7 @@ Pending → Assigned → In Progress → Cleaned → Verified
 ```
 
 1. Citizen submits photo + GPS
-2. AI detects waste type and severity
+2. AI detects waste type and severity via custom TACO YOLOv8
 3. Nearest available collector is assigned
 4. Collector accepts and starts cleaning
 5. Collector uploads after-cleaning photo
@@ -103,7 +105,7 @@ pytest tests/ -v
 | Component    | Technology                          |
 |-------------|--------------------------------------|
 | Backend     | Python + FastAPI                     |
-| AI/ML       | YOLOv8 (Ultralytics) + Pillow        |
+| AI/ML       | Custom YOLOv8 (TACO) + Pillow        |
 | Database    | SQLite (local prototype)             |
 | Maps        | Leaflet + OpenStreetMap              |
 | Frontend    | Jinja2 HTML templates                |
@@ -111,9 +113,10 @@ pytest tests/ -v
 
 ## Advanced Features Implemented
 
-- ✅ AI garbage detection (YOLO + fallback)
+- ✅ Custom TACO AI garbage detection (`best.pt` with 10 classes)
+- ✅ Confidence-weighted dominant waste aggregation
 - ✅ Duplicate complaint detection (~50 m radius)
 - ✅ Smart collector allocation (Haversine distance)
-- ✅ Priority prediction (severity + report count)
+- ✅ Priority prediction (severity + report count + age)
 - ✅ Before/after verification (image comparison)
 - ✅ Garbage hotspot prediction (grid clustering)

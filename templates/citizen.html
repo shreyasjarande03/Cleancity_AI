@@ -17,36 +17,113 @@
     <a href="/logout" class="link-btn">Logout</a>
   </header>
 
-  {% if request.query_params.get('msg') == 'reported' %}
+  {% if msg == 'reported' or request.query_params.get('msg') == 'reported' %}
   <div class="alert alert-success">Complaint submitted! Nearest collector has been assigned.</div>
-  {% elif request.query_params.get('msg') == 'duplicate' %}
+  {% elif msg == 'duplicate' or request.query_params.get('msg') == 'duplicate' %}
   <div class="alert alert-info">This location was already reported. Your report was merged to avoid duplicates.</div>
-  {% elif request.query_params.get('msg') == 'no_garbage' %}
+  {% elif msg == 'no_garbage' or request.query_params.get('msg') == 'no_garbage' %}
   <div class="alert alert-warning">AI did not detect garbage in this report. Please try again with a clearer photo.</div>
-  {% elif request.query_params.get('msg') == 'incomplete' %}
+  {% elif msg == 'incomplete' or request.query_params.get('msg') == 'incomplete' %}
   <div class="alert alert-warning">Please add a photo, a category, or a description before submitting.</div>
   {% endif %}
+
+  <!-- Live / Submitted AI Detection Result Card -->
+  <div id="ai-result-container" {% if not ai_result %}style="display: none;"{% endif %}>
+    {% if ai_result %}
+    <div class="card ai-result-card">
+      <div class="ai-card-header">
+        <div class="ai-header-title">
+          <span class="ai-badge">🤖 AI Detection Result</span>
+          {% if ai_result.error %}
+          <span class="status-pill status-error">AI Warning</span>
+          {% else %}
+          <span class="status-pill status-verified">Verified by {{ ai_result.method or 'YOLOv8' }}</span>
+          {% endif %}
+        </div>
+        <span class="ai-confidence-pill">{{ (ai_result.confidence * 100) | round | int }}% Confidence</span>
+      </div>
+
+      {% if ai_result.error %}
+      <div class="alert alert-error" style="margin-top: 12px; margin-bottom: 12px;">
+        {{ ai_result.error }}
+      </div>
+      {% endif %}
+
+      <div class="ai-grid">
+        <div class="ai-stat-box">
+          <span class="ai-stat-label">Garbage Detected</span>
+          <span class="ai-stat-value">{% if ai_result.is_garbage %}✅ Yes{% else %}❌ No{% endif %}</span>
+        </div>
+        <div class="ai-stat-box">
+          <span class="ai-stat-label">Waste Type</span>
+          <span class="ai-stat-value highlight-text">{{ ai_result.waste_type }}</span>
+        </div>
+        <div class="ai-stat-box">
+          <span class="ai-stat-label">Detection Method</span>
+          <span class="ai-stat-value">{{ ai_result.method or 'YOLOv8' }}</span>
+        </div>
+        <div class="ai-stat-box">
+          <span class="ai-stat-label">Objects Detected</span>
+          <span class="ai-stat-value">{{ ai_result.detections or (ai_result.detected_objects | length if ai_result.detected_objects else 0) }}</span>
+        </div>
+        <div class="ai-stat-box">
+          <span class="ai-stat-label">Severity Level</span>
+          <span class="ai-stat-value severity-{{ (ai_result.severity.level if ai_result.severity else 'low') | lower }}">
+            {{ ai_result.severity.level if ai_result.severity else 'Low' }}
+          </span>
+        </div>
+      </div>
+
+      {% if ai_result.detected_objects and ai_result.detected_objects | length > 0 %}
+      <div class="detected-objects-section">
+        <h4>Detected Objects:</h4>
+        <div class="detected-tags-list">
+          {% for obj in ai_result.detected_objects %}
+          <div class="detected-tag">
+            <span class="tag-class">{{ obj.class }}</span>
+            <span class="tag-sep">—</span>
+            <span class="tag-conf">{{ (obj.confidence * 100) | round | int }}%</span>
+            <span class="tag-type">({{ obj.waste_type }})</span>
+            {% if obj.bbox %}
+            <span class="tag-bbox" title="Bounding Box [x1, y1, x2, y2]">📍 [{{ obj.bbox[0] }}, {{ obj.bbox[1] }}, {{ obj.bbox[2] }}, {{ obj.bbox[3] }}]</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
 
   <div class="layout-grid">
     <section class="card">
       <h3>📷 Report Garbage</h3>
-      <form action="/report" method="post" class="report-form" enctype="multipart/form-data">
-        <label>Garbage category (optional)</label>
-        <select name="waste_type">
+      <form action="/report" method="post" id="report-form" class="report-form" enctype="multipart/form-data">
+        <label for="waste_type">Garbage category (optional)</label>
+        <select name="waste_type" id="waste_type">
           <option value="">Auto-detect with AI</option>
-          <option value="Plastic">🍾 Plastic</option>
-          <option value="Organic">🌿 Organic</option>
-          <option value="Mixed">🗑️ Mixed</option>
-          <option value="Construction">🚧 Construction</option>
-          <option value="Dry">📦 Dry</option>
+          <option value="Plastic" {% if ai_result and ai_result.waste_type == 'Plastic' %}selected{% endif %}>🍾 Plastic</option>
+          <option value="Organic" {% if ai_result and ai_result.waste_type == 'Organic' %}selected{% endif %}>🌿 Organic</option>
+          <option value="Mixed" {% if ai_result and ai_result.waste_type == 'Mixed' %}selected{% endif %}>🗑️ Mixed</option>
+          <option value="Construction" {% if ai_result and ai_result.waste_type == 'Construction' %}selected{% endif %}>🚧 Construction</option>
+          <option value="Dry" {% if ai_result and ai_result.waste_type == 'Dry' %}selected{% endif %}>📦 Dry</option>
         </select>
 
-        <label>Description</label>
-        <textarea name="description" rows="3" placeholder="e.g. large pile of plastic bottles near drainage"></textarea>
+        <div class="label-with-action">
+          <label for="description">Description</label>
+          <span id="ai-desc-hint" class="ai-hint-tag" {% if ai_result and ai_result.suggested_description %}style="display: inline-block;"{% else %}style="display: none;"{% endif %}>✨ Auto-generated by AI</span>
+        </div>
+        <textarea name="description" id="description" rows="3" placeholder="e.g. large pile of plastic bottles near drainage">{% if ai_result and ai_result.suggested_description %}{{ ai_result.suggested_description }}{% endif %}</textarea>
 
-        <label>Photo</label>
+        <label for="photo">Photo</label>
         <input type="file" name="photo" id="photo" accept="image/*" capture="environment" onchange="previewPhoto(event)" />
-        <img id="photo-preview" class="photo-preview" alt="Preview" />
+        <div class="preview-container">
+          <img id="photo-preview" class="photo-preview" alt="Preview" {% if last_uploaded_image %}src="{{ last_uploaded_image }}" style="display: block;"{% endif %} />
+          <div id="ai-loading-spinner" class="ai-spinner" style="display: none;">
+            <span>⚡ Running Custom YOLOv8 Waste Detection & Auto-Generating Description...</span>
+          </div>
+        </div>
 
         <label>Location (auto-detected GPS)</label>
         <div class="gps-row">
@@ -56,7 +133,7 @@
         </div>
         <div id="citizen-map" class="mini-map"></div>
 
-        <button type="submit">Submit Complaint</button>
+        <button type="submit" id="submit-btn">Submit Complaint</button>
       </form>
     </section>
 
@@ -98,6 +175,11 @@
 
 <script>
   let citizenMap, citizenMarker;
+  let isDescUserModified = false;
+
+  document.getElementById('description').addEventListener('input', () => {
+    isDescUserModified = document.getElementById('description').value.trim().length > 0;
+  });
 
   function initCitizenMap() {
     const lat = parseFloat(document.getElementById('latitude').value);
@@ -128,12 +210,125 @@
     });
   }
 
-  function previewPhoto(event) {
+  async function previewPhoto(event) {
     const file = event.target.files[0];
     const img = document.getElementById('photo-preview');
-    if (!file) { img.style.display = 'none'; return; }
+    const spinner = document.getElementById('ai-loading-spinner');
+    
+    if (!file) { 
+      img.style.display = 'none'; 
+      return; 
+    }
     img.src = URL.createObjectURL(file);
     img.style.display = 'block';
+
+    // Trigger instant preview AI analysis
+    spinner.style.display = 'flex';
+    const formData = new FormData();
+    formData.append('photo', file);
+    formData.append('waste_type', document.getElementById('waste_type').value);
+    formData.append('description', document.getElementById('description').value);
+
+    try {
+      const res = await fetch('/api/analyze-preview', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        renderLiveAIResult(data);
+
+        // Auto-populate description in the Description field only
+        const descField = document.getElementById('description');
+        const descHint = document.getElementById('ai-desc-hint');
+        if (data.suggested_description && (!descField.value || !isDescUserModified)) {
+          descField.value = data.suggested_description;
+          if (descHint) descHint.style.display = 'inline-block';
+        }
+
+        // Auto-select category if set to Auto-detect
+        const catSelect = document.getElementById('waste_type');
+        if (data.waste_type && (catSelect.value === '' || catSelect.dataset.autoselected === 'true')) {
+          catSelect.value = data.waste_type;
+          catSelect.dataset.autoselected = 'true';
+        }
+      }
+    } catch (err) {
+      console.warn("Live AI preview error:", err);
+    } finally {
+      spinner.style.display = 'none';
+    }
+  }
+
+  function renderLiveAIResult(data) {
+    const container = document.getElementById('ai-result-container');
+    if (!data) return;
+
+    let objectsHtml = '';
+    if (data.detected_objects && data.detected_objects.length > 0) {
+      objectsHtml = `
+        <div class="detected-objects-section">
+          <h4>Detected Objects:</h4>
+          <div class="detected-tags-list">
+            ${data.detected_objects.map(obj => `
+              <div class="detected-tag">
+                <span class="tag-class">${obj.class}</span>
+                <span class="tag-sep">—</span>
+                <span class="tag-conf">${Math.round(obj.confidence * 100)}%</span>
+                <span class="tag-type">(${obj.waste_type})</span>
+                ${obj.bbox ? `<span class="tag-bbox" title="Bounding Box [x1, y1, x2, y2]">📍 [${obj.bbox.join(', ')}]</span>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const sevLevel = (data.severity && data.severity.level) ? data.severity.level : 'Low';
+    const confPct = Math.round((data.confidence || 0.8) * 100);
+
+    container.innerHTML = `
+      <div class="card ai-result-card">
+        <div class="ai-card-header">
+          <div class="ai-header-title">
+            <span class="ai-badge">🤖 AI Detection Result</span>
+            ${data.error 
+              ? `<span class="status-pill status-error">AI Error</span>` 
+              : `<span class="status-pill status-verified">Verified by ${data.method || 'YOLOv8'}</span>`
+            }
+          </div>
+          <span class="ai-confidence-pill">${confPct}% Confidence</span>
+        </div>
+
+        ${data.error ? `<div class="alert alert-error" style="margin-top: 12px; margin-bottom: 12px;">${data.error}</div>` : ''}
+
+        <div class="ai-grid">
+          <div class="ai-stat-box">
+            <span class="ai-stat-label">Garbage Detected</span>
+            <span class="ai-stat-value">${data.is_garbage ? '✅ Yes' : '❌ No'}</span>
+          </div>
+          <div class="ai-stat-box">
+            <span class="ai-stat-label">Waste Type</span>
+            <span class="ai-stat-value highlight-text">${data.waste_type || 'Mixed'}</span>
+          </div>
+          <div class="ai-stat-box">
+            <span class="ai-stat-label">Detection Method</span>
+            <span class="ai-stat-value">${data.method || 'YOLOv8'}</span>
+          </div>
+          <div class="ai-stat-box">
+            <span class="ai-stat-label">Objects Detected</span>
+            <span class="ai-stat-value">${data.detections || (data.detected_objects ? data.detected_objects.length : 0)}</span>
+          </div>
+          <div class="ai-stat-box">
+            <span class="ai-stat-label">Severity Level</span>
+            <span class="ai-stat-value severity-${sevLevel.toLowerCase()}">${sevLevel}</span>
+          </div>
+        </div>
+
+        ${objectsHtml}
+      </div>
+    `;
+    container.style.display = 'block';
   }
 
   document.addEventListener('DOMContentLoaded', () => {
