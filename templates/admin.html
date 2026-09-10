@@ -24,6 +24,7 @@
     <div class="stat-box"><span>In Progress</span><strong>{{ in_progress|default(0) }}</strong></div>
     <div class="stat-box"><span>Cleaned</span><strong>{{ cleaned|default(0) }}</strong></div>
     <div class="stat-box"><span>High Priority</span><strong>{{ high_priority|default(0) }}</strong></div>
+    <div class="stat-box"><span>Duplicates Merged</span><strong>{{ duplicates_merged|default(0) }}</strong></div>
   </div>
 
   <h3>Complaint & hotspot map</h3>
@@ -43,7 +44,7 @@
         <tbody>
           {% for spot in hotspots %}
           <tr>
-            <td>{{ "%.4f"|format(spot.latitude) }}, {{ "%.4f"|format(spot.longitude) }}</td>
+            <td>{{ "%.4f"|format(spot.latitude) if spot.latitude is not none else "—" }}, {{ "%.4f"|format(spot.longitude) if spot.longitude is not none else "—" }}</td>
             <td><strong>{{ spot.complaint_count }}</strong></td>
             <td>{{ spot.label }}</td>
           </tr>
@@ -67,7 +68,7 @@
         <tbody>
           {% for pred in predictions %}
           <tr>
-            <td>{{ "%.4f"|format(pred.latitude) }}, {{ "%.4f"|format(pred.longitude) }}</td>
+            <td>{{ "%.4f"|format(pred.latitude) if pred.latitude is not none else "—" }}, {{ "%.4f"|format(pred.longitude) if pred.longitude is not none else "—" }}</td>
             <td><strong>{{ pred.predicted_complaints_next_week }}</strong></td>
             <td>{{ pred.risk_level }}</td>
           </tr>
@@ -96,7 +97,7 @@
         {% for item in complaints %}
         <tr>
           <td>{{ item.complaint_id }}</td>
-          <td>{{ "%.4f"|format(item.latitude) }}, {{ "%.4f"|format(item.longitude) }}</td>
+          <td>{{ "%.4f"|format(item.latitude) if item.latitude is not none else "—" }}, {{ "%.4f"|format(item.longitude) if item.longitude is not none else "—" }}</td>
           <td>{{ item.waste_type }}</td>
           <td><span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span></td>
           <td>{{ item.severity }}</td>
@@ -110,21 +111,28 @@
   </section>
 </div>
 
+<script id="admin-complaints-data" type="application/json">{{ complaints_json | safe }}</script>
+<script id="admin-hotspots-data" type="application/json">{{ hotspots_json | safe }}</script>
 <script>
-  const complaints = {{ complaints_json | safe }};
-  const hotspots = {{ hotspots_json | safe }};
-
   document.addEventListener('DOMContentLoaded', () => {
-    const center = complaints.length
-      ? [complaints[0].latitude, complaints[0].longitude]
-      : [12.9716, 77.5946];
+    const complaintsEl = document.getElementById('admin-complaints-data');
+    const hotspotsEl = document.getElementById('admin-hotspots-data');
+    const complaints = complaintsEl ? JSON.parse(complaintsEl.textContent || '[]') : [];
+    const hotspots = hotspotsEl ? JSON.parse(hotspotsEl.textContent || '[]') : [];
+
+    const validComplaints = (complaints || []).filter(c => c && c.latitude != null && c.longitude != null);
+    const validHotspots = (hotspots || []).filter(h => h && h.latitude != null && h.longitude != null);
+
+    const center = validComplaints.length
+      ? [validComplaints[0].latitude, validComplaints[0].longitude]
+      : (validHotspots.length ? [validHotspots[0].latitude, validHotspots[0].longitude] : [12.9716, 77.5946]);
 
     const map = L.map('admin-map').setView(center, 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    complaints.forEach(c => {
+    validComplaints.forEach(c => {
       const color = (c.severity === 'Critical' || c.severity === 'High') ? '#d65b52' : '#f4b942';
       L.circleMarker([c.latitude, c.longitude], {
         radius: 7,
@@ -137,7 +145,7 @@
       .bindPopup(`<b>${c.complaint_id}</b><br>${c.waste_type} — ${c.status}`);
     });
 
-    hotspots.forEach(h => {
+    validHotspots.forEach(h => {
       L.circle([h.latitude, h.longitude], {
         radius: 200 + (h.complaint_count * 80),
         color: '#d65b52',

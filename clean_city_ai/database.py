@@ -200,7 +200,7 @@ def get_complaints_for_collector(collector_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT * FROM complaints
-        WHERE status NOT IN ('Verified')
+        WHERE status NOT IN ('Verified', 'Cleaned')
           AND (collector_id = ? OR collector_id IS NULL)
         ORDER BY priority_score DESC, created_at ASC
         """,

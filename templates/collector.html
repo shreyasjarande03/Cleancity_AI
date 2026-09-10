@@ -36,24 +36,24 @@
       {% endif %}
 
       <h4>{{ item.waste_type }} waste — {{ item.severity }} priority</h4>
-      <p>📍 {{ item.latitude }}, {{ item.longitude }}</p>
+      <p>📍 {{ "%.4f"|format(item.latitude) if item.latitude is not none else '—' }}, {{ "%.4f"|format(item.longitude) if item.longitude is not none else '—' }}</p>
       <p>Priority score: {{ item.priority_score or '—' }} | Reports: {{ item.report_count or 1 }}</p>
       {% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}
 
       <div class="task-actions">
-        {% if item.status == 'Pending' or item.status == 'Assigned' %}
+        {% if item.status == 'Pending' %}
         <form action="/collector/{{ item.complaint_id }}/accept" method="post">
           <button type="submit">Accept task</button>
         </form>
-        {% endif %}
-
-        {% if item.status == 'Assigned' %}
+        {% elif item.status == 'Assigned' %}
         <form action="/collector/{{ item.complaint_id }}/start" method="post">
           <button type="submit" class="secondary">Start cleaning</button>
         </form>
-        {% endif %}
-
-        {% if item.status == 'In Progress' or item.status == 'Assigned' %}
+        <form action="/collector/{{ item.complaint_id }}/complete" method="post" enctype="multipart/form-data" class="complete-form">
+          <input type="file" name="after_photo" accept="image/*" capture="environment" required />
+          <button type="submit">Upload after photo &amp; complete</button>
+        </form>
+        {% elif item.status == 'In Progress' %}
         <form action="/collector/{{ item.complaint_id }}/complete" method="post" enctype="multipart/form-data" class="complete-form">
           <input type="file" name="after_photo" accept="image/*" capture="environment" required />
           <button type="submit">Upload after photo &amp; complete</button>
@@ -70,19 +70,22 @@
   </div>
 </div>
 
+<script id="collector-complaints-data" type="application/json">{{ complaints | tojson }}</script>
 <script>
-  const complaints = {{ complaints | tojson }};
-
   document.addEventListener('DOMContentLoaded', () => {
-    const center = complaints.length
-      ? [complaints[0].latitude, complaints[0].longitude]
+    const complaintsEl = document.getElementById('collector-complaints-data');
+    const complaints = complaintsEl ? JSON.parse(complaintsEl.textContent || '[]') : [];
+
+    const validComplaints = (complaints || []).filter(c => c && c.latitude != null && c.longitude != null);
+    const center = validComplaints.length
+      ? [validComplaints[0].latitude, validComplaints[0].longitude]
       : [12.9716, 77.5946];
     const map = L.map('collector-map').setView(center, 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    complaints.forEach(c => {
+    validComplaints.forEach(c => {
       L.marker([c.latitude, c.longitude])
         .addTo(map)
         .bindPopup(`<strong>${c.complaint_id}</strong><br>${c.waste_type} — ${c.status}`);

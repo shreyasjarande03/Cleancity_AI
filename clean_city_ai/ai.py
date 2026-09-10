@@ -27,7 +27,7 @@ YOLO_CLASSES = [
     "cigarette",
 ]
 
-# Application-level mapping from TACO classes to CleanCity waste categories
+# Application-level mapping from TACO and general waste classes to CleanCity waste categories
 TACO_TO_CLEANCITY_MAP = {
     "plastic_bottle": "Plastic",
     "plastic_wrapper": "Plastic",
@@ -39,6 +39,25 @@ TACO_TO_CLEANCITY_MAP = {
     "glass": "Dry",
     "paper_cardboard": "Dry",
     "cigarette": "Mixed",
+    "bottle": "Plastic",
+    "cup": "Plastic",
+    "can": "Dry",
+    "wine glass": "Dry",
+    "bowl": "Dry",
+    "banana": "Organic",
+    "apple": "Organic",
+    "sandwich": "Organic",
+    "orange": "Organic",
+    "broccoli": "Organic",
+    "carrot": "Organic",
+    "pizza": "Organic",
+    "donut": "Organic",
+    "cake": "Organic",
+    "box": "Dry",
+    "paper": "Dry",
+    "cardboard": "Dry",
+    "bag": "Plastic",
+    "container": "Plastic",
 }
 
 WASTE_KEYWORDS = {
@@ -49,8 +68,27 @@ WASTE_KEYWORDS = {
     "Dry": ["paper", "cardboard", "dry", "metal", "glass", "carton", "newspaper", "can"],
 }
 
+try:
+    from ultralytics import YOLO  # type: ignore[import-untyped, import-not-found]
+except (ImportError, Exception):
+    YOLO = None  # type: ignore[assignment]
+
 _yolo_model = None
 _yolo_load_attempted = False
+
+
+def _find_model_path() -> Path | None:
+    candidates = [
+        MODEL_PATH,
+        BASE_DIR / "models" / "best.pt",
+        BASE_DIR / "best.pt",
+        BASE_DIR.parent / "best.pt",
+        BASE_DIR / "yolov8n.pt",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
 
 
 def _load_yolo() -> Any:
@@ -60,24 +98,39 @@ def _load_yolo() -> Any:
         return _yolo_model
     _yolo_load_attempted = True
 
-    logger.info("Checking custom YOLO model at path: %s (exists=%s)", MODEL_PATH, MODEL_PATH.exists())
-    if not MODEL_PATH.exists():
+    model_file = _find_model_path()
+    logger.info("Checking custom YOLO model at path: %s (exists=%s)", model_file, model_file.exists() if model_file else False)
+    if not model_file or not model_file.exists():
         logger.warning(
-            "Custom TACO YOLO model not found at '%s'. Falling back to pixel/keyword analysis.",
-            MODEL_PATH,
+            "Custom TACO YOLO model not found. Falling back to pixel/keyword analysis.",
         )
         _yolo_model = None
         return None
 
-    try:
-        from ultralytics import YOLO
+    if YOLO is None:
+        logger.warning("ultralytics library is not installed or available. Falling back to pixel/keyword analysis.")
+        _yolo_model = None
+        return None
 
-        _yolo_model = YOLO(str(MODEL_PATH))
-        logger.info("Successfully loaded custom YOLOv8 model from %s with classes: %s", MODEL_PATH, _yolo_model.names)
+    try:
+        _yolo_model = YOLO(str(model_file))
+        logger.info("Successfully loaded custom YOLOv8 model from %s with classes: %s", model_file, _yolo_model.names)
     except Exception as exc:
-        logger.error("Failed to load YOLO model from %s: %s", MODEL_PATH, exc, exc_info=True)
+        logger.error("Failed to load YOLO model from %s: %s", model_file, exc, exc_info=True)
         _yolo_model = None
     return _yolo_model
+
+
+def _get_class_name(names: Any, cls_id: int) -> str:
+    """Safely resolve class name whether names is a dict, list, or fallback list."""
+    if isinstance(names, dict):
+        return str(names.get(cls_id, YOLO_CLASSES[cls_id] if cls_id < len(YOLO_CLASSES) else f"class_{cls_id}"))
+    if isinstance(names, (list, tuple)):
+        if 0 <= cls_id < len(names):
+            return str(names[cls_id])
+    if cls_id < len(YOLO_CLASSES):
+        return YOLO_CLASSES[cls_id]
+    return f"class_{cls_id}"
 
 
 def get_dominant_waste_type(detections: list[dict[str, Any]]) -> str:
@@ -125,31 +178,32 @@ def _analyze_image_pixels(image_path: str | Path) -> dict[str, Any]:
         from PIL import Image
         import statistics
 
-        img = Image.open(image_path).convert("RGB")
-        pixels = list(img.getdata())
-        w, h = img.size
-        total = max(1, w * h)
+        with Image.open(image_path) as raw_img:
+            img = raw_img.convert("RGB").resize((128, 128))
+            pixels = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+            w, h = img.size
+            total = max(1, w * h)
 
-        brightness = statistics.mean(sum(p) / 3 for p in pixels)
-        green_ratio = sum(1 for r, g, b in pixels if g > r and g > b) / total
-        brown_ratio = sum(1 for r, g, b in pixels if r > 80 and g > 50 and b < 80) / total
-        gray_ratio = sum(1 for r, g, b in pixels if abs(r - g) < 20 and abs(g - b) < 20) / total
+            brightness = statistics.mean(sum(p) / 3 for p in pixels)
+            green_ratio = sum(1 for r, g, b in pixels if g > r and g > b) / total
+            brown_ratio = sum(1 for r, g, b in pixels if r > 80 and g > 50 and b < 80) / total
+            gray_ratio = sum(1 for r, g, b in pixels if abs(r - g) < 20 and abs(g - b) < 20) / total
 
-        clutter_score = min(1.0, (gray_ratio * 1.5) + (brown_ratio * 1.2) + 0.1)
+            clutter_score = min(1.0, (gray_ratio * 1.5) + (brown_ratio * 1.2) + 0.1)
 
-        waste_type = "Mixed"
-        if green_ratio > 0.25:
-            waste_type = "Organic"
-        elif gray_ratio > 0.35:
             waste_type = "Mixed"
-        elif brown_ratio > 0.2:
-            waste_type = "Construction"
+            if green_ratio > 0.25:
+                waste_type = "Organic"
+            elif gray_ratio > 0.35:
+                waste_type = "Mixed"
+            elif brown_ratio > 0.2:
+                waste_type = "Construction"
 
-        return {
-            "clutter_score": clutter_score,
-            "waste_type_hint": waste_type,
-            "brightness": brightness / 255,
-        }
+            return {
+                "clutter_score": round(clutter_score, 2),
+                "waste_type_hint": waste_type,
+                "brightness": round(brightness / 255, 2),
+            }
     except Exception as exc:
         logger.warning("Pixel analysis failed on image %s: %s", image_path, exc)
         return {"clutter_score": 0.5, "waste_type_hint": "Mixed", "brightness": 0.5}
@@ -209,13 +263,22 @@ def detect_waste_from_image(
             total_area = 0.0
 
             for result in results:
-                names = result.names or {}
-                for box in result.boxes:
+                names = getattr(result, "names", {}) or {}
+                boxes = getattr(result, "boxes", []) or []
+                for box in boxes:
                     cls_id = int(box.cls[0] if hasattr(box.cls, "__getitem__") else box.cls)
                     conf = float(box.conf[0] if hasattr(box.conf, "__getitem__") else box.conf)
-                    raw_name = names.get(cls_id, YOLO_CLASSES[cls_id] if cls_id < len(YOLO_CLASSES) else "unknown")
+                    raw_name = _get_class_name(names, cls_id)
                     class_name = str(raw_name).lower()
-                    clean_waste_type = TACO_TO_CLEANCITY_MAP.get(class_name, "Mixed")
+                    
+                    clean_waste_type = TACO_TO_CLEANCITY_MAP.get(class_name)
+                    if not clean_waste_type:
+                        for wt, keywords in WASTE_KEYWORDS.items():
+                            if any(kw in class_name for kw in keywords):
+                                clean_waste_type = wt
+                                break
+                    if not clean_waste_type:
+                        clean_waste_type = "Mixed"
                     
                     raw_xyxy = box.xyxy[0] if hasattr(box.xyxy, "__getitem__") else box.xyxy
                     if hasattr(raw_xyxy, "tolist"):
@@ -324,7 +387,8 @@ def _get_image_size(path: Path) -> tuple[int, int]:
     try:
         from PIL import Image
 
-        return Image.open(path).size
+        with Image.open(path) as img:
+            return img.size
     except Exception:
         return (640, 480)
 
@@ -402,18 +466,18 @@ def verify_cleanup(before_path: str | Path | None, after_path: str | Path | None
         from PIL import Image
         import statistics
 
-        b_img = Image.open(before).convert("RGB").resize((256, 256))
-        a_img = Image.open(after).convert("RGB").resize((256, 256))
-
-        b_pixels = list(b_img.getdata())
-        a_pixels = list(a_img.getdata())
+        with Image.open(before) as raw_b, Image.open(after) as raw_a:
+            b_img = raw_b.convert("RGB").resize((128, 128))
+            a_img = raw_a.convert("RGB").resize((128, 128))
+            b_pixels = list(b_img.get_flattened_data() if hasattr(b_img, "get_flattened_data") else b_img.getdata())
+            a_pixels = list(a_img.get_flattened_data() if hasattr(a_img, "get_flattened_data") else a_img.getdata())
 
         diffs = [abs(sum(b) - sum(a)) / 765 for b, a in zip(b_pixels, a_pixels)]
         avg_diff = statistics.mean(diffs)
 
         b_clutter = _analyze_image_pixels(before)["clutter_score"]
         a_clutter = _analyze_image_pixels(after)["clutter_score"]
-        clutter_reduction = max(0, b_clutter - a_clutter)
+        clutter_reduction = max(0.0, b_clutter - a_clutter)
 
         score = min(1.0, (avg_diff * 0.6) + (clutter_reduction * 0.8))
         verified = score >= 0.35 or (clutter_reduction >= 0.15 and avg_diff >= 0.1)
@@ -437,7 +501,16 @@ def predict_hotspots(historical: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grid: dict[tuple[int, int], dict[str, Any]] = {}
 
     for item in historical:
-        lat, lon = item["latitude"], item["longitude"]
+        lat = item.get("latitude")
+        lon = item.get("longitude")
+        if lat is None or lon is None:
+            continue
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except (ValueError, TypeError):
+            continue
+
         key = (int(lat / cell_size), int(lon / cell_size))
         if key not in grid:
             grid[key] = {"lat_sum": 0.0, "lon_sum": 0.0, "count": 0}
@@ -450,8 +523,8 @@ def predict_hotspots(historical: list[dict[str, Any]]) -> list[dict[str, Any]]:
         count = data["count"]
         predictions.append(
             {
-                "latitude": data["lat_sum"] / count,
-                "longitude": data["lon_sum"] / count,
+                "latitude": round(data["lat_sum"] / count, 4),
+                "longitude": round(data["lon_sum"] / count, 4),
                 "predicted_complaints_next_week": max(1, int(count * 1.2)),
                 "risk_level": "High" if count >= 3 else "Medium" if count >= 2 else "Low",
             }

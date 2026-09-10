@@ -104,14 +104,21 @@ async def login(email: str = Form(...), password: str = Form(...)):
         "citizen": "/citizen",
     }
     response = RedirectResponse(url=redirect_map.get(user["role"], "/citizen"), status_code=303)
-    response.set_cookie(key="user_email", value=user["email"], httponly=True, max_age=86400)
+    response.set_cookie(
+        key="user_email",
+        value=user["email"],
+        path="/",
+        httponly=True,
+        samesite="lax",
+        max_age=86400,
+    )
     return response
 
 
 @app.get("/logout")
 async def logout():
     response = RedirectResponse(url="/", status_code=303)
-    response.delete_cookie("user_email")
+    response.delete_cookie("user_email", path="/")
     return response
 
 
@@ -227,10 +234,32 @@ async def report(
     if duplicate:
         updated = increment_duplicate_report(duplicate["complaint_id"])
         priority = compute_priority_score(
-            {"Low": 0.3, "Medium": 0.55, "High": 0.85, "Critical": 0.95}.get(updated["severity"], 0.5),
+            {"Low": 0.3, "Medium": 0.55, "High": 0.85, "Critical": 0.95}.get(updated.get("severity", "Medium"), 0.5),
             updated.get("report_count", 1),
         )
         update_complaint_status(duplicate["complaint_id"], updated["status"], priority_score=priority)
+
+        # Record duplicate submission so the citizen can track their complaint
+        dup_payload = {
+            "complaint_id": f"CC-{uuid.uuid4().hex[:8].upper()}",
+            "user_id": user["id"],
+            "image_url": image_url or "",
+            "before_image": image_url or "",
+            "latitude": latitude,
+            "longitude": longitude,
+            "waste_type": analysis["waste_type"],
+            "severity": severity["level"],
+            "status": duplicate["status"],
+            "created_at": datetime.now().isoformat(),
+            "collector_id": duplicate.get("collector_id"),
+            "ai_confidence": analysis.get("confidence"),
+            "description": final_desc,
+            "priority_score": priority,
+            "duplicate_of": duplicate["complaint_id"],
+            "report_count": 1,
+        }
+        save_complaint(dup_payload)
+
         updated_complaints = get_complaints_for_citizen(user["id"])
         return templates.TemplateResponse(
             request=request,
@@ -258,7 +287,7 @@ async def report(
         "waste_type": analysis["waste_type"],
         "severity": severity["level"],
         "status": status,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now().isoformat(),
         "collector_id": assigned["id"] if assigned else None,
         "ai_confidence": analysis.get("confidence"),
         "description": final_desc,
@@ -350,7 +379,7 @@ async def complete_task(
             "complaint_id": complaint_id,
             "before_image": complaint.get("before_image"),
             "after_image": after_url,
-            "completed_time": datetime.utcnow().isoformat(),
+            "completed_time": datetime.now().isoformat(),
             "verified": verified_flag,
             "verification_score": verification.get("score"),
         }
