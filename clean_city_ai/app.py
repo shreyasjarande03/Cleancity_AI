@@ -11,6 +11,7 @@ warnings.filterwarnings(
 
 import json
 import logging
+import os
 import shutil
 import uuid
 from datetime import datetime
@@ -49,8 +50,11 @@ from .database import (
 logger = logging.getLogger("CleanCity.App")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-UPLOAD_DIR = BASE_DIR / "static" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = (Path("/tmp") / "static" / "uploads") if os.environ.get("VERCEL") else (BASE_DIR / "static" / "uploads")
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 

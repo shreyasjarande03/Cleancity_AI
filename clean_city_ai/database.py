@@ -1,17 +1,36 @@
 from __future__ import annotations
 
 import math
+import os
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cleancity.db"
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _get_db_path() -> Path:
+    if os.environ.get("VERCEL"):
+        tmp_db = Path("/tmp") / "cleancity.db"
+        orig_db = BASE_DIR / "data" / "cleancity.db"
+        if not tmp_db.exists() and orig_db.exists():
+            try:
+                shutil.copyfile(orig_db, tmp_db)
+            except Exception:
+                pass
+        return tmp_db
+    return BASE_DIR / "data" / "cleancity.db"
+
+
+DB_PATH = _get_db_path()
 DUPLICATE_RADIUS_KM = 0.05  # ~50 meters
 
 
 def get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_file = _get_db_path()
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_file)
     conn.row_factory = sqlite3.Row
     return conn
 
