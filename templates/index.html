@@ -1,38 +1,105 @@
 {% extends "base.html" %}
 
-{% block title %}CleanCity AI | Login{% endblock %}
+{% block title %}CleanCity AI — Smart Municipal Waste Management{% endblock %}
 
 {% block content %}
-<div class="page-shell hero-bg">
-  <div class="card login-card">
+<div class="page-shell">
+  <!-- Top Navigation -->
+  <header class="topbar">
     <div class="logo-row">
       <span class="logo-icon">♻️</span>
-      <h1>CleanCity AI</h1>
+      <div>
+        <h2 style="margin: 0;">CleanCity AI</h2>
+        <p class="muted" style="margin: 0; font-size: 0.85rem;">Intelligent Municipal Waste Management System</p>
+      </div>
     </div>
-    <p class="subtitle">Intelligent citizen-driven waste detection and smart collection management.</p>
+    <a href="#login-section" class="link-btn" style="background: var(--primary); color: white; padding: 8px 18px; border-radius: 20px;">Portal Access</a>
+  </header>
 
-    {% if request.query_params.get('error') %}
-    <div class="alert alert-error">Invalid email or password.</div>
-    {% endif %}
+  <!-- Hero Section -->
+  <section class="hero-section" style="text-align: center; padding: 40px 10px 30px;">
+    <span class="status-pill status-verified" style="display: inline-block; margin-bottom: 12px; font-size: 0.85rem;">⚡ Real-time YOLOv8 Computer Vision</span>
+    <h1 style="font-size: 2.5rem; margin-bottom: 16px; color: #167d52;">Smart Citizen Garbage Reporting &amp; Collection</h1>
+    <p class="subtitle" style="max-width: 680px; margin: 0 auto 30px; font-size: 1.1rem; line-height: 1.5;">
+      Empowering citizens to report waste instantly via AI-powered photo recognition and GPS dispatch, connecting municipal collectors with high-priority cleanups.
+    </p>
+  </section>
 
-    <form action="/login" method="post">
-      <label for="email">Email</label>
-      <input id="email" name="email" type="email" value="citizen@cleancity.ai" required />
-
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" value="citizen123" required />
-
-      <button type="submit">Login</button>
-    </form>
-
-    <div class="demo-box">
-      <h3>Demo accounts</h3>
-      <ul>
-        <li><strong>Citizen:</strong> citizen@cleancity.ai / citizen123</li>
-        <li><strong>Collector:</strong> collector@cleancity.ai / collector123</li>
-        <li><strong>Admin:</strong> admin@cleancity.ai / admin123</li>
-      </ul>
+  <!-- Feature Grid -->
+  <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 40px;">
+    <div class="stat-card" style="text-align: left; padding: 22px;">
+      <span style="font-size: 2rem;">📸</span>
+      <h4 style="margin: 10px 0 6px;">AI Waste Detection</h4>
+      <p class="muted" style="font-size: 0.88rem; margin: 0;">YOLOv8 automatically identifies plastics, organics, metal, and clutter severity.</p>
+    </div>
+    <div class="stat-card" style="text-align: left; padding: 22px;">
+      <span style="font-size: 2rem;">📍</span>
+      <h4 style="margin: 10px 0 6px;">Proximity Dispatch</h4>
+      <p class="muted" style="font-size: 0.88rem; margin: 0;">Nearest available sanitation collector is dynamically assigned based on GPS distance.</p>
+    </div>
+    <div class="stat-card" style="text-align: left; padding: 22px;">
+      <span style="font-size: 2rem;">🗺️</span>
+      <h4 style="margin: 10px 0 6px;">Hotspot Analytics</h4>
+      <p class="muted" style="font-size: 0.88rem; margin: 0;">Real-time geospatial clustering to predict chronic waste dumping zones.</p>
+    </div>
+    <div class="stat-card" style="text-align: left; padding: 22px;">
+      <span style="font-size: 2rem;">✅</span>
+      <h4 style="margin: 10px 0 6px;">Automated Verification</h4>
+      <p class="muted" style="font-size: 0.88rem; margin: 0;">Computer vision compares before &amp; after photos to verify task resolution.</p>
     </div>
   </div>
+
+  <!-- Login Section -->
+  <div id="login-section" style="display: flex; justify-content: center; margin-bottom: 40px;">
+    <div class="card login-card" style="width: min(520px, 94vw);">
+      <h3 style="margin-bottom: 6px;">Portal Sign In</h3>
+      <p class="muted" style="font-size: 0.9rem; margin-bottom: 18px;">Select a role or enter your credentials to access your dashboard.</p>
+
+      <!-- Quick Role Switcher -->
+      <div style="display: flex; gap: 8px; margin-bottom: 18px;">
+        <button type="button" class="secondary" onclick="fillDemo('citizen')" style="flex: 1; padding: 8px 6px; font-size: 0.85rem;">👤 Citizen</button>
+        <button type="button" class="secondary" onclick="fillDemo('collector')" style="flex: 1; padding: 8px 6px; font-size: 0.85rem;">🚛 Collector</button>
+        <button type="button" class="secondary" onclick="fillDemo('admin')" style="flex: 1; padding: 8px 6px; font-size: 0.85rem;">🏛️ Admin</button>
+      </div>
+
+      {% if request.query_params.get('error') %}
+      <div class="alert alert-error">Invalid email or password. Please try again.</div>
+      {% endif %}
+
+      <form action="/login" method="post">
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" placeholder="Enter your email" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" placeholder="Enter your password" required />
+
+        <button type="submit" style="margin-top: 8px;">Sign In to Dashboard</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer style="text-align: center; border-top: 1px solid var(--border); padding-top: 24px; color: var(--muted); font-size: 0.85rem;">
+    <p>© 2026 CleanCity AI Municipal Systems. Open-source waste monitoring &amp; collection platform.</p>
+  </footer>
 </div>
+
+<script>
+  function fillDemo(role) {
+    const creds = {
+      citizen: { email: 'citizen@cleancity.ai', pass: 'citizen123' },
+      collector: { email: 'collector@cleancity.ai', pass: 'collector123' },
+      admin: { email: 'admin@cleancity.ai', pass: 'admin123' }
+    };
+    if (creds[role]) {
+      document.getElementById('email').value = creds[role].email;
+      document.getElementById('password').value = creds[role].pass;
+    }
+  }
+
+  // Pre-fill citizen by default on first load
+  document.addEventListener('DOMContentLoaded', () => {
+    fillDemo('citizen');
+  });
+</script>
 {% endblock %}
