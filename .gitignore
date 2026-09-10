@@ -1,0 +1,29 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.pytest_cache/
+
+# Databases
+data/*.db
+data/*.sqlite3
+
+# Uploads
+static/uploads/*
+!static/uploads/.gitkeep
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Large weights (optional: yolov8n.pt if old)
+yolov8n.pt
