@@ -10,24 +10,30 @@
 {% block content %}
 <div class="page-shell">
   <header class="topbar">
-    <div>
-      <h2>Admin Dashboard</h2>
-      <p>Municipal overview, complaint analytics, and garbage hotspot clustering</p>
+    <div class="logo-row">
+      <span class="logo-icon"><i class="fa-solid fa-chart-line" style="color: var(--primary-dark);"></i></span>
+      <div>
+        <h2>Municipal Admin Dashboard</h2>
+        <p class="muted" style="font-size: 0.88rem;">City-wide waste analytics, AI hotspot predictions, and collection dispatch</p>
+      </div>
     </div>
-    <a href="/logout" class="link-btn">Logout</a>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span class="badge" style="background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8;"><i class="fa-solid fa-shield-halved"></i> Municipal Administrator</span>
+      <a href="/logout" class="link-btn"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+    </div>
   </header>
 
   <div class="stats-grid">
-    <div class="stat-box"><span>Total</span><strong>{{ total|default(0) }}</strong></div>
-    <div class="stat-box"><span>Pending</span><strong>{{ pending|default(0) }}</strong></div>
-    <div class="stat-box"><span>Assigned</span><strong>{{ assigned|default(0) }}</strong></div>
-    <div class="stat-box"><span>In Progress</span><strong>{{ in_progress|default(0) }}</strong></div>
-    <div class="stat-box"><span>Cleaned</span><strong>{{ cleaned|default(0) }}</strong></div>
-    <div class="stat-box"><span>High Priority</span><strong>{{ high_priority|default(0) }}</strong></div>
-    <div class="stat-box"><span>Duplicates Merged</span><strong>{{ duplicates_merged|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-list-check"></i> Total Reports</span><strong>{{ total|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-clock"></i> Pending</span><strong style="color: #d97706;">{{ pending|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-user-gear"></i> Assigned</span><strong style="color: #2563eb;">{{ assigned|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-spinner"></i> In Progress</span><strong style="color: #7c3aed;">{{ in_progress|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-circle-check"></i> Cleaned</span><strong style="color: #059669;">{{ cleaned|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-triangle-exclamation"></i> High Priority</span><strong style="color: #dc2626;">{{ high_priority|default(0) }}</strong></div>
+    <div class="stat-box"><span><i class="fa-solid fa-object-ungroup"></i> Duplicates Merged</span><strong style="color: #4b5563;">{{ duplicates_merged|default(0) }}</strong></div>
   </div>
 
-  <h3>Complaint & hotspot map</h3>
+  <h3><i class="fa-solid fa-map-location-dot"></i> Real-time Incident &amp; Hotspot Map</h3>
   <div id="admin-map" class="map-full"></div>
 
   <div class="layout-grid">

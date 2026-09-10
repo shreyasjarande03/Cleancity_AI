@@ -10,15 +10,27 @@
 {% block content %}
 <div class="page-shell">
   <header class="topbar">
-    <div>
-      <h2>Collector Dashboard</h2>
-      <p>Assigned tasks sorted by priority — {{ collector.name if collector else 'Collector' }}</p>
+    <div class="logo-row">
+      <span class="logo-icon"><i class="fa-solid fa-truck-pickup" style="color: var(--primary-dark);"></i></span>
+      <div>
+        <h2>Collector Dashboard</h2>
+        <p class="muted" style="font-size: 0.88rem;">Assigned cleanup tasks sorted by priority — {{ collector.name if collector else 'Collector' }}</p>
+      </div>
     </div>
-    <a href="/logout" class="link-btn">Logout</a>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span class="badge" style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;"><i class="fa-solid fa-id-badge"></i> {{ collector.name if collector else 'Collector' }}</span>
+      <a href="/logout" class="link-btn"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+    </div>
   </header>
 
-  {% if request.query_params.get('msg') %}
-  <div class="alert alert-success">Task updated successfully.</div>
+  {% if request.query_params.get('msg') == 'accepted' %}
+  <div class="alert alert-success"><i class="fa-solid fa-check-double"></i> Task accepted and locked to your route.</div>
+  {% elif request.query_params.get('msg') == 'started' %}
+  <div class="alert alert-info"><i class="fa-solid fa-play"></i> Task marked In Progress. Upload after-photo once cleaned.</div>
+  {% elif request.query_params.get('msg') == 'completed' %}
+  <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Task completed &amp; resolution verified by AI!</div>
+  {% elif request.query_params.get('msg') %}
+  <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Task updated successfully.</div>
   {% endif %}
 
   <div id="collector-map" class="map-full"></div>

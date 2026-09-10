@@ -10,21 +10,27 @@
 {% block content %}
 <div class="page-shell">
   <header class="topbar">
-    <div>
-      <h2>Citizen Portal</h2>
-      <p>Report garbage with photo + GPS — AI detects and classifies waste automatically</p>
+    <div class="logo-row">
+      <span class="logo-icon"><i class="fa-solid fa-user-check" style="color: var(--primary-dark);"></i></span>
+      <div>
+        <h2>Citizen Portal</h2>
+        <p class="muted" style="font-size: 0.88rem;">Report garbage with AI auto-detection &amp; real-time GPS dispatch</p>
+      </div>
     </div>
-    <a href="/logout" class="link-btn">Logout</a>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span class="badge" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;"><i class="fa-solid fa-circle-user"></i> {{ user.name if user else 'Citizen' }}</span>
+      <a href="/logout" class="link-btn"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+    </div>
   </header>
 
   {% if msg == 'reported' or request.query_params.get('msg') == 'reported' %}
-  <div class="alert alert-success">Complaint submitted! Nearest collector has been assigned.</div>
+  <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Complaint submitted successfully! Nearest municipal collector has been assigned.</div>
   {% elif msg == 'duplicate' or request.query_params.get('msg') == 'duplicate' %}
-  <div class="alert alert-info">This location was already reported. Your report was merged to avoid duplicates.</div>
+  <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> This location was already reported. Your complaint was merged with the active pickup task.</div>
   {% elif msg == 'no_garbage' or request.query_params.get('msg') == 'no_garbage' %}
-  <div class="alert alert-warning">AI did not detect garbage in this report. Please try again with a clearer photo.</div>
+  <div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation"></i> AI did not detect garbage in this image. Please try again with a clearer photo.</div>
   {% elif msg == 'incomplete' or request.query_params.get('msg') == 'incomplete' %}
-  <div class="alert alert-warning">Please add a photo, a category, or a description before submitting.</div>
+  <div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation"></i> Please add a photo, category, or description before submitting.</div>
   {% endif %}
 
   <!-- Live / Submitted AI Detection Result Card -->
