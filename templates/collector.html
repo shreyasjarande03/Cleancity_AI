@@ -43,8 +43,10 @@
         <span class="status status-{{ item.status | lower | replace(' ', '-') }}">{{ item.status }}</span>
       </div>
 
-      {% if item.image_url %}
-      <img src="{{ item.image_url }}" alt="Before photo" class="task-photo" />
+      {% if item.image_url or item.before_image %}
+      <div class="task-photo-container">
+        <img src="{{ item.image_url or item.before_image }}" alt="Garbage photo" class="task-photo" />
+      </div>
       {% endif %}
 
       <h4>{{ item.waste_type }} waste — {{ item.severity }} priority</h4>

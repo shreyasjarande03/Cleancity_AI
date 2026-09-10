@@ -41,3 +41,54 @@ def test_api_endpoints():
     assert client.get("/api/complaints").status_code == 200
     assert client.get("/api/hotspots").status_code == 200
     assert client.get("/api/stats").status_code == 200
+
+
+def test_citizen_report_with_photo():
+    import io
+    from PIL import Image
+
+    # Generate small test JPEG in memory
+    buf = io.BytesIO()
+    img = Image.new("RGB", (64, 64), color="blue")
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+
+    resp = client.post(
+        "/report",
+        data={
+            "waste_type": "Plastic",
+            "description": "plastic bottles near roadside",
+            "latitude": 12.9716,
+            "longitude": 77.5946,
+        },
+        files={"photo": ("test_waste.jpg", buf, "image/jpeg")},
+        cookies={"user_email": "citizen@cleancity.ai"},
+    )
+    assert resp.status_code == 200
+    assert "data:image/jpeg;base64," in resp.text
+    assert "Complaint submitted successfully" in resp.text or "active pickup task" in resp.text
+
+
+def test_collector_complete_with_photo():
+    import io
+    from PIL import Image
+
+    # Fetch active complaint
+    complaints = client.get("/api/complaints").json()
+    assert len(complaints) > 0
+    cid = complaints[0]["complaint_id"]
+
+    buf = io.BytesIO()
+    img = Image.new("RGB", (64, 64), color="green")
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+
+    resp = client.post(
+        f"/collector/{cid}/complete",
+        files={"after_photo": ("clean_after.jpg", buf, "image/jpeg")},
+        cookies={"user_email": "collector@cleancity.ai"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/collector?msg=completed"
+

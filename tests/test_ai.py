@@ -186,3 +186,44 @@ def test_yolo_fallback_when_model_fails_or_none(tmp_path):
         assert res["is_garbage"] is True
         assert res["waste_type"] == "Plastic"
         assert "pixels" in res["method"] or "keywords" in res["method"]
+
+
+def test_detect_waste_from_base64_data_url():
+    import base64
+    import io
+    from PIL import Image
+
+    buf = io.BytesIO()
+    img = Image.new("RGB", (64, 64), color=(60, 60, 60))
+    img.save(buf, format="JPEG")
+    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    with patch("clean_city_ai.ai._load_yolo", return_value=None):
+        res = detect_waste_from_image(data_url, "organic vegetable scraps", "Organic")
+        assert res["is_garbage"] is True
+        assert res["waste_type"] == "Organic"
+
+
+def test_verify_cleanup_with_data_urls():
+    import base64
+    import io
+    from PIL import Image
+
+    # Dirty image
+    buf_b = io.BytesIO()
+    img_b = Image.new("RGB", (64, 64), color=(50, 50, 50))
+    img_b.save(buf_b, format="JPEG")
+    url_b = f"data:image/jpeg;base64,{base64.b64encode(buf_b.getvalue()).decode('utf-8')}"
+
+    # Clean image
+    buf_a = io.BytesIO()
+    img_a = Image.new("RGB", (64, 64), color=(220, 220, 220))
+    img_a.save(buf_a, format="JPEG")
+    url_a = f"data:image/jpeg;base64,{base64.b64encode(buf_a.getvalue()).decode('utf-8')}"
+
+    verification = verify_cleanup(url_b, url_a)
+    assert "verified" in verification
+    assert "score" in verification
+    assert verification["verified"] is True
+

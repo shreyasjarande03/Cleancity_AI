@@ -172,54 +172,111 @@ def generate_auto_description(
     return f"{severity_level} severity {waste_type.lower()} waste reported at this location."
 
 
-def _analyze_image_pixels(image_path: str | Path) -> dict[str, Any]:
-    """Fallback pixel-level image analysis when ML model is unavailable or detections are inconclusive."""
+def _load_image_as_pil(source: str | Path | None) -> Any:
+    """Safely load an image as a PIL Image from a file path, Path object, or Base64 data URL."""
+    if not source:
+        return None
     try:
         from PIL import Image
+        import base64
+        import io
+
+        if isinstance(source, str) and source.startswith("data:image"):
+            header, encoded = source.split(",", 1) if "," in source else ("", source)
+            data = base64.b64decode(encoded)
+            return Image.open(io.BytesIO(data))
+        
+        path = Path(source)
+        if not path.is_absolute() and not path.exists():
+            candidate = BASE_DIR / str(source).lstrip("/")
+            if candidate.exists():
+                path = candidate
+        if path.exists():
+            return Image.open(path)
+    except Exception as exc:
+        logger.warning("Failed to open PIL image from source: %s", exc)
+    return None
+
+
+def _get_image_file_path(source: str | Path | None) -> Path | None:
+    """Convert an image source (path or Base64 data URL) into a valid local file path."""
+    if not source:
+        return None
+    if isinstance(source, str) and source.startswith("data:image"):
+        try:
+            import base64
+            import tempfile
+
+            header, encoded = source.split(",", 1) if "," in source else ("", source)
+            data = base64.b64decode(encoded)
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            tmp.write(data)
+            tmp.close()
+            return Path(tmp.name)
+        except Exception as exc:
+            logger.warning("Failed to write data url to temporary file: %s", exc)
+            return None
+
+    path = Path(source)
+    if not path.is_absolute() and not path.exists():
+        candidate = BASE_DIR / str(source).lstrip("/")
+        if candidate.exists():
+            return candidate
+    if path.exists():
+        return path
+    return None
+
+
+def _analyze_image_pixels(image_source: str | Path | None) -> dict[str, Any]:
+    """Fallback pixel-level image analysis when ML model is unavailable or detections are inconclusive."""
+    try:
         import statistics
 
-        with Image.open(image_path) as raw_img:
-            img = raw_img.convert("RGB").resize((128, 128))
-            pixels = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
-            w, h = img.size
-            total = max(1, w * h)
+        raw_img = _load_image_as_pil(image_source)
+        if raw_img is None:
+            return {"clutter_score": 0.5, "waste_type_hint": "Mixed", "brightness": 0.5}
 
-            brightness = statistics.mean(sum(p) / 3 for p in pixels)
-            green_ratio = sum(1 for r, g, b in pixels if g > r and g > b) / total
-            brown_ratio = sum(1 for r, g, b in pixels if r > 80 and g > 50 and b < 80) / total
-            gray_ratio = sum(1 for r, g, b in pixels if abs(r - g) < 20 and abs(g - b) < 20) / total
+        img = raw_img.convert("RGB").resize((128, 128))
+        pixels = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+        w, h = img.size
+        total = max(1, w * h)
 
-            clutter_score = min(1.0, (gray_ratio * 1.5) + (brown_ratio * 1.2) + 0.1)
+        brightness = statistics.mean(sum(p) / 3 for p in pixels)
+        green_ratio = sum(1 for r, g, b in pixels if g > r and g > b) / total
+        brown_ratio = sum(1 for r, g, b in pixels if r > 80 and g > 50 and b < 80) / total
+        gray_ratio = sum(1 for r, g, b in pixels if abs(r - g) < 20 and abs(g - b) < 20) / total
 
+        clutter_score = min(1.0, (gray_ratio * 1.5) + (brown_ratio * 1.2) + 0.1)
+
+        waste_type = "Mixed"
+        if green_ratio > 0.25:
+            waste_type = "Organic"
+        elif gray_ratio > 0.35:
             waste_type = "Mixed"
-            if green_ratio > 0.25:
-                waste_type = "Organic"
-            elif gray_ratio > 0.35:
-                waste_type = "Mixed"
-            elif brown_ratio > 0.2:
-                waste_type = "Construction"
+        elif brown_ratio > 0.2:
+            waste_type = "Construction"
 
-            return {
-                "clutter_score": round(clutter_score, 2),
-                "waste_type_hint": waste_type,
-                "brightness": round(brightness / 255, 2),
-            }
+        return {
+            "clutter_score": round(clutter_score, 2),
+            "waste_type_hint": waste_type,
+            "brightness": round(brightness / 255, 2),
+        }
     except Exception as exc:
-        logger.warning("Pixel analysis failed on image %s: %s", image_path, exc)
+        logger.warning("Pixel analysis failed on image %s: %s", image_source, exc)
         return {"clutter_score": 0.5, "waste_type_hint": "Mixed", "brightness": 0.5}
 
 
 def detect_waste_from_image(
-    image_path: str | Path | None,
+    image_source: str | Path | None,
     image_description: str = "",
     user_category: str | None = None,
 ) -> dict[str, Any]:
     """Detect garbage using custom TACO YOLOv8 when available, with pixel and keyword fallbacks."""
     text = (image_description or "").lower()
     logger.info("=== START AI WASTE DETECTION ===")
-    logger.info("Input parameters: image_path=%s, description='%s', user_category='%s'", image_path, text, user_category)
+    logger.info("Input parameters: image_source=%s, description='%s', user_category='%s'", type(image_source), text, user_category)
 
-    if user_category and user_category.strip().title() in WASTE_KEYWORDS and not image_path:
+    if user_category and user_category.strip().title() in WASTE_KEYWORDS and not image_source:
         w_type = user_category.strip().title()
         sev = estimate_severity(text or w_type)
         desc = generate_auto_description(w_type, sev["level"])
@@ -234,7 +291,7 @@ def detect_waste_from_image(
         logger.info("User category provided without image: %s", res)
         return res
 
-    if not image_path:
+    if not image_source:
         res = detect_waste(text, user_category)
         sev = estimate_severity(text or res["waste_type"])
         res["severity"] = sev
@@ -242,9 +299,9 @@ def detect_waste_from_image(
         logger.info("No image provided, text-based detection result: %s", res)
         return res
 
-    path = Path(image_path)
-    if not path.exists():
-        logger.warning("Image file does not exist at %s. Falling back to text detection.", path)
+    path = _get_image_file_path(image_source)
+    if not path or not path.exists():
+        logger.warning("Image file could not be resolved from %s. Falling back to text detection.", image_source)
         res = detect_waste(text, user_category)
         sev = estimate_severity(text or res["waste_type"])
         res["severity"] = sev
@@ -252,7 +309,7 @@ def detect_waste_from_image(
         return res
 
     model = _load_yolo()
-    pixel_info = _analyze_image_pixels(path)
+    pixel_info = _analyze_image_pixels(image_source)
     yolo_inference_error = None
 
     if model is not None:
@@ -452,31 +509,29 @@ def compute_priority_score(severity_score: float, report_count: int, age_hours: 
     return round(min(1.0, severity_score + duplicate_boost + age_boost), 2)
 
 
-def verify_cleanup(before_path: str | Path | None, after_path: str | Path | None) -> dict[str, Any]:
+def verify_cleanup(before_source: str | Path | None, after_source: str | Path | None) -> dict[str, Any]:
     """Compare before/after images to verify garbage removal."""
-    if not before_path or not after_path:
+    if not before_source or not after_source:
         return {"verified": False, "score": 0.0, "reason": "Missing images"}
 
-    before = Path(before_path)
-    after = Path(after_path)
-    if not before.exists() or not after.exists():
-        return {"verified": False, "score": 0.0, "reason": "Image files not found"}
+    raw_b = _load_image_as_pil(before_source)
+    raw_a = _load_image_as_pil(after_source)
+    if raw_b is None or raw_a is None:
+        return {"verified": False, "score": 0.0, "reason": "Image files not found or unreadable"}
 
     try:
-        from PIL import Image
         import statistics
 
-        with Image.open(before) as raw_b, Image.open(after) as raw_a:
-            b_img = raw_b.convert("RGB").resize((128, 128))
-            a_img = raw_a.convert("RGB").resize((128, 128))
-            b_pixels = list(b_img.get_flattened_data() if hasattr(b_img, "get_flattened_data") else b_img.getdata())
-            a_pixels = list(a_img.get_flattened_data() if hasattr(a_img, "get_flattened_data") else a_img.getdata())
+        b_img = raw_b.convert("RGB").resize((128, 128))
+        a_img = raw_a.convert("RGB").resize((128, 128))
+        b_pixels = list(b_img.get_flattened_data() if hasattr(b_img, "get_flattened_data") else b_img.getdata())
+        a_pixels = list(a_img.get_flattened_data() if hasattr(a_img, "get_flattened_data") else a_img.getdata())
 
         diffs = [abs(sum(b) - sum(a)) / 765 for b, a in zip(b_pixels, a_pixels)]
         avg_diff = statistics.mean(diffs)
 
-        b_clutter = _analyze_image_pixels(before)["clutter_score"]
-        a_clutter = _analyze_image_pixels(after)["clutter_score"]
+        b_clutter = _analyze_image_pixels(before_source)["clutter_score"]
+        a_clutter = _analyze_image_pixels(after_source)["clutter_score"]
         clutter_reduction = max(0.0, b_clutter - a_clutter)
 
         score = min(1.0, (avg_diff * 0.6) + (clutter_reduction * 0.8))

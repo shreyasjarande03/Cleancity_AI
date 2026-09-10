@@ -91,6 +91,7 @@
     <table>
       <thead>
         <tr>
+          <th>Photo</th>
           <th>ID</th>
           <th>Coordinates</th>
           <th>Type</th>
@@ -102,6 +103,11 @@
       <tbody>
         {% for item in complaints %}
         <tr>
+          <td class="photo-cell">
+            {% if item.image_url or item.before_image %}
+            <img src="{{ item.image_url or item.before_image }}" alt="Waste photo" />
+            {% else %}—{% endif %}
+          </td>
           <td>{{ item.complaint_id }}</td>
           <td>{{ "%.4f"|format(item.latitude) if item.latitude is not none else "—" }}, {{ "%.4f"|format(item.longitude) if item.longitude is not none else "—" }}</td>
           <td>{{ item.waste_type }}</td>
@@ -110,7 +116,7 @@
           <td>{{ item.report_count or 1 }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">No complaints yet.</td></tr>
+        <tr><td colspan="7" class="empty">No complaints yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

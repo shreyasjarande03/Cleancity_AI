@@ -9,6 +9,8 @@ warnings.filterwarnings(
     category=RuntimeWarning,
 )
 
+import base64
+import io
 import json
 import logging
 import os
@@ -53,6 +55,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = (Path("/tmp") / "static" / "uploads") if os.environ.get("VERCEL") else (BASE_DIR / "static" / "uploads")
 try:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    (BASE_DIR / "static" / "uploads").mkdir(parents=True, exist_ok=True)
 except Exception:
     pass
 
@@ -67,17 +70,46 @@ init_db()
 
 
 def _save_upload(file: UploadFile | None) -> str | None:
+    """Save upload to disk and return an optimized Base64 data URL for instant, reliable rendering."""
     if not file or not file.filename:
         return None
-    ext = Path(file.filename).suffix.lower() or ".jpg"
-    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+    try:
+        content = file.file.read()
+        if not content:
+            return None
+
+        optimized_bytes = content
+        try:
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(content))
+            img = img.convert("RGB")
+            img.thumbnail((1024, 1024))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=82, optimize=True)
+            optimized_bytes = buf.getvalue()
+        except Exception as pil_err:
+            logger.debug("PIL optimization skipped: %s", pil_err)
+
         ext = ".jpg"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    dest = UPLOAD_DIR / filename
-    with dest.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    logger.info("Saved upload image to destination: %s", dest)
-    return f"/static/uploads/{filename}"
+        filename = f"{uuid.uuid4().hex}{ext}"
+        try:
+            dest = UPLOAD_DIR / filename
+            dest.write_bytes(optimized_bytes)
+            fallback_dest = BASE_DIR / "static" / "uploads" / filename
+            if fallback_dest != dest:
+                fallback_dest.parent.mkdir(parents=True, exist_ok=True)
+                fallback_dest.write_bytes(optimized_bytes)
+        except Exception as write_err:
+            logger.warning("Could not write upload to local disk: %s", write_err)
+
+        b64_encoded = base64.b64encode(optimized_bytes).decode("utf-8")
+        data_url = f"data:image/jpeg;base64,{b64_encoded}"
+        logger.info("Processed uploaded image: size=%d bytes", len(optimized_bytes))
+        return data_url
+    except Exception as exc:
+        logger.error("Error processing file upload: %s", exc)
+        return None
 
 
 def _session_user(request: Request) -> dict | None:
@@ -215,10 +247,9 @@ async def report(
         )
 
     image_url = _save_upload(photo)
-    local_path = BASE_DIR / image_url.lstrip("/") if image_url else None
 
-    logger.info("Processing citizen report submission: local_path=%s, desc='%s', type='%s'", local_path, description, waste_type)
-    analysis = detect_waste_from_image(local_path, description, waste_type)
+    logger.info("Processing citizen report submission: has_image=%s, desc='%s', type='%s'", bool(image_url), description, waste_type)
+    analysis = detect_waste_from_image(image_url, description, waste_type)
     logger.info("AI Analysis completed in report route: %s", analysis)
 
     if not analysis.get("is_garbage", True):
@@ -327,8 +358,7 @@ async def analyze_preview(
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
     image_url = _save_upload(photo)
-    local_path = BASE_DIR / image_url.lstrip("/") if image_url else None
-    analysis = detect_waste_from_image(local_path, description, waste_type)
+    analysis = detect_waste_from_image(image_url, description, waste_type)
     analysis["image_url"] = image_url
     return analysis
 
@@ -368,10 +398,10 @@ async def complete_task(
         return RedirectResponse(url="/collector", status_code=303)
 
     after_url = _save_upload(after_photo)
-    before_path = BASE_DIR / complaint["before_image"].lstrip("/") if complaint.get("before_image") else None
-    after_path = BASE_DIR / after_url.lstrip("/") if after_url else None
+    before_source = complaint.get("before_image") or complaint.get("image_url")
+    after_source = after_url
 
-    verification = verify_cleanup(before_path, after_path)
+    verification = verify_cleanup(before_source, after_source)
     verified_flag = 1 if verification["verified"] else 0
     new_status = "Verified" if verification["verified"] else "Cleaned"
 
@@ -384,7 +414,7 @@ async def complete_task(
     save_resolution(
         {
             "complaint_id": complaint_id,
-            "before_image": complaint.get("before_image"),
+            "before_image": before_source,
             "after_image": after_url,
             "completed_time": datetime.now().isoformat(),
             "verified": verified_flag,
